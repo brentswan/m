@@ -61,6 +61,8 @@ import { textForScreenReader, defaultMediaVisibility } from '../../components/st
 import Icon from 'mastodon/components/icon';
 import { Helmet } from 'react-helmet';
 import BundleColumnError from 'mastodon/features/ui/components/bundle_column_error';
+import { assignResponsesForStatus } from './utils/assign_responses_for_status';
+import { setResponsesWithLinesData } from './utils/set_lines_for_responses';
 
 const messages = defineMessages({
   deleteConfirm: { id: 'confirmations.delete.confirm', defaultMessage: 'Delete' },
@@ -131,7 +133,13 @@ const makeMapStateToProps = () => {
       });
     }
 
-    return Immutable.List(descendantsIds);
+    const statusesWithResponseHierarchy = assignResponsesForStatus(
+      statusId,
+      descendantsIds.map(id => statuses.get(id).toObject()),
+      3,
+    );
+
+    return Immutable.List(setResponsesWithLinesData( statusesWithResponseHierarchy ));
   });
 
   const mapStateToProps = (state, props) => {
@@ -541,6 +549,27 @@ class Status extends ImmutablePureComponent {
     ));
   }
 
+  renderDescendants (list) {
+    return list.map(({ id, children, lines }) => {
+      return (<div className='status__thread' key={id}>
+        {new Array(lines.level - 1).fill(undefined).map((_, index, self) => <div aria-hidden='true' data={JSON.stringify({ index, l: self.length, lines, half: index === self.lenght-1 && lines?.lastChild })} className={classNames('status__thread--line', { half: (index === self.length-1) && lines?.lastChild, hidden: index < lines?.hiddenLevels })} key={index} />)}
+        <StatusContainer
+          key={`${id}${lines?.mode}`}
+          id={id}
+          onMoveUp={this.handleMoveUp}
+          onMoveDown={this.handleMoveDown}
+          contextType='thread'
+          lines={lines}
+        />
+        {children.length ? (
+          <>
+            {this.renderDescendants(children)}
+          </>
+        ) : null}
+      </div>);
+    });
+  }
+
   setRef = c => {
     this.node = c;
   };
@@ -594,7 +623,7 @@ class Status extends ImmutablePureComponent {
     }
 
     if (descendantsIds && descendantsIds.size > 0) {
-      descendants = <>{this.renderChildren(descendantsIds)}</>;
+      descendants = <>{this.renderDescendants(descendantsIds)}</>;
     }
 
     const isLocal = status.getIn(['account', 'acct'], '').indexOf('@') === -1;
